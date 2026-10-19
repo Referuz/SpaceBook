@@ -1,4 +1,6 @@
 DROP DATABASE IF EXISTS db_spacebook;
+CREATE DATABASE db_spacebook;
+USE db_spacebook;
 
 CREATE TABLE usuario AS
     id_usuario INT PRIMARY KEY AUTO_INCREMENT,
