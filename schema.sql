@@ -72,9 +72,7 @@ CREATE TABLE resenia (
     comentario TEXT,
     fecha TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     id_reserva INT NOT NULL,
-    id_sala INT NOT NULL,
-    CONSTRAINT id_reserva_resenia FOREIGN KEY (id_reserva) REFERENCES reserva(id_reserva),
-    CONSTRAINT id_sala_resenia FOREIGN KEY (id_sala) REFERENCES sala(id_sala)
+    CONSTRAINT id_reserva_resenia FOREIGN KEY (id_reserva) REFERENCES reserva(id_reserva)
 );
 
 CREATE TABLE auditoria (
