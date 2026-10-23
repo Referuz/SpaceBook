@@ -749,3 +749,22 @@ BEGIN
     COMMIT;
 END $$
 DELIMITER ;
+
+-- CLIENTE
+-- Reseñar
+DELIMITER $$
+CREATE PROCEDURE sp_reseniar(
+	IN x_calificacion TINYINT,	-- 1
+    IN x_comentario TEXT,		-- 2
+    IN x_id_reserva INT			-- 3
+)
+BEGIN
+	IF (SELECT COUNT(*) FROM reserva WHERE id_reserva = x_id_reserva) = 0 THEN
+		SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "RESERVA_INEXISTENTE";
+	END IF;
+    
+    INSERT INTO resenia(calificacion, comentario, id_reserva, id_sala)
+		values(x_calificacion, x_comentario, x_id_reserva, (SELECT id_sala FROM reserva WHERE id_reserva = x_id_reservas));
+    
+END $$
+DELIMITER ;
