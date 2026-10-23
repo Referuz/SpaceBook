@@ -692,3 +692,50 @@ BEGIN
 END $$
 DELIMITER ;
 
+-- CLIENTE
+-- Canelacion de reserva con pago
+DELIMITER $$
+CREATE PROCEDURE sp_cancelar(
+	IN x_id_reserva INT,			-- 1
+    IN x_motivo_cancelacion TEXT	-- 2
+)
+BEGIN
+	DECLARE x_id_pago INT DEFAULT 0;
+    DECLARE x_monto_pagado DECIMAL;
+    DECLARE x_monto_reembolsado DECIMAL;
+    DECLARE x_fecha_inicio_reserva DATETIME;
+
+	DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+		ROLLBACK;
+        RESIGNAL;
+	END;
+    
+	IF (SELECT COUNT(*) FROM reserva WHERE id_reserva = x_id_reserva) = 0 THEN
+		SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "RESERVA_INECTISTENTE";
+	END IF;
+    
+    START TRANSACTION;
+    UPDATE reserva SET fecha_cancelacion = NOW(), motivo_cancelacion = x_motivo_cancelacion, estado = "CANCELADO"
+    WHERE id_reserva = x_id_reserva; 
+    SELECT id_pago FROM pago WHERE id_reserva = x_id_reserva INTO x_id_pago;
+    
+    IF x_id_pago <> 0 THEN
+    
+        SELECT inicio FROM reserva WHERE id_reserva = x_id_reserva INTO x_fecha_inicio_reserva;
+        SELECT monto FROM pago WHERE id_reserva = x_id_reserva INTO x_monto_pagado;
+        
+        IF x_fecha_inicio_reserva >= NOW() + INTERVAL 24 HOUR THEN 
+				SET x_monto_reembolsado = x_monto_pagado;
+		ELSEIF x_fecha_inicio_reserva < NOW() + INTERVAL 24 HOUR AND x_fecha_inicio_reserva > NOW() + INTERVAL 2 HOUR THEN
+				SET x_monto_reembolsado = (x_monto_pagado * 0.5);
+		ELSEIF x_fecha_inicio_reserva < NOW() + INTERVAL 2 HOUR THEN
+				SET x_monto_reembolsado = 0;
+		END IF;
+    END IF;
+    
+    UPDATE pago SET monto_reembolsado = x_monto_reembolsado, fecha_reembolso = NOW(), estado = "REEMBOLSADO" 
+    WHERE id_reserva = x_id_reserva;
+    COMMIT;
+END $$
+DELIMITER ;
