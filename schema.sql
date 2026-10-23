@@ -574,10 +574,18 @@ BEGIN
     IF x_fecha_inicio < x_ahora THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'FECHA_EN_EL_PASADO';
     END IF;
+    
+    IF TIME(x_fecha_inicio) > "20:00" OR TIME(x_fecha_fin) > "20:00" THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'HORA_FUERA_DE_RANGO';
+    END IF;
 
     IF NOT EXISTS (SELECT 1 FROM usuario WHERE id_usuario = x_id_cliente) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'USUARIO_INEXISTENTE';
     END IF;
+    
+    IF (SELECT COUNT(*) FROM reserva WHERE id_cliente = x_id_cliente) >= 3 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'LIMITE_3_RESERVAS';
+	END IF;
 
     START TRANSACTION;
 
@@ -590,6 +598,10 @@ BEGIN
     END IF;
 
     SET x_total = x_precio_hora * TIMESTAMPDIFF(MINUTE, x_fecha_inicio, x_fecha_fin) / 60;
+    
+    IF DAYNAME(CURDATE()) = "Saturday" OR DAYNAME(CURDATE()) = "Sunday" THEN
+		SET x_total = x_total - (x_total * 0.3);
+    END IF;
 
     -- Traslape (ignora PENDIENTE ya expiradas)
     IF EXISTS (
