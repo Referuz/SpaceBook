@@ -545,54 +545,82 @@ DELIMITER ;
 -- nota: requiere un evento para expirar las reservas expiradas
 DELIMITER $$
 CREATE PROCEDURE sp_reservar(
-	IN x_fecha_inicio DATETIME,		-- 1
-    IN x_fecha_fin DATETIME,		-- 2
-    IN x_fecha_creacion DATETIME,	-- 3
-    IN x_id_cliente INT,			-- 4
-    IN x_id_sala INT				-- 5
+    IN x_fecha_inicio DATETIME,
+    IN x_fecha_fin    DATETIME,
+    IN x_id_cliente   INT,
+    IN x_id_sala      INT
 )
 BEGIN
-
-    DECLARE x_total_precio_hora DECIMAL;
-    DECLARE x_fecha_expiracion_limite DATETIME DEFAULT NOW() + INTERVAL 1 DAY;
+    DECLARE x_ahora DATETIME DEFAULT NOW();
+    DECLARE x_precio_hora DECIMAL(10,2);
+    DECLARE x_total DECIMAL(10,2);
     DECLARE x_fecha_expiracion DATETIME;
+    DECLARE x_fecha_expiracion_limite DATETIME DEFAULT NOW() + INTERVAL 1 DAY;
     DECLARE x_codigo INT;
 
-    IF x_fecha_inicio IS NULL OR x_fecha_inicio = "" AND x_fecha_fin IS NULL OR x_fecha_fin = ""
-    AND x_fecha_creacion IS NULL OR x_fecha_creacion = "" AND x_id_cliente IS NULL OR x_id_cliente = "" 
-    AND x_id_sala IS NULL OR x_id_sala = "" THEN
-        SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "FALTAN_CAMPOS";
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+
+    IF x_fecha_inicio IS NULL OR x_fecha_fin IS NULL
+       OR x_id_cliente IS NULL OR x_id_sala IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'FALTAN_CAMPOS';
     END IF;
 
-    IF(SELECT COUNT(id_usuario) FROM usuario WHERE id_usuario = x_id_cliente) <> 1 THEN
-        SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "USUARIO_INEXISTENTE";
-    ELSEIF(SELECT COUNT(id_sala) FROM sala WHERE id_sala = x_id_sala) <> 1 THEN
-        SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "SALA_INEXISTENTE";
+    IF x_fecha_fin <= x_fecha_inicio THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RANGO_FECHAS_INVALIDO';
     END IF;
 
-    IF (SELECT COUNT(id_sala) FROM sala where id_sala = x_id_sala) <> 1 THEN 
-        SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "SALA_INEXISTENTE";
+    IF x_fecha_inicio < x_ahora THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'FECHA_EN_EL_PASADO';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM usuario WHERE id_usuario = x_id_cliente) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'USUARIO_INEXISTENTE';
+    END IF;
+
+    START TRANSACTION;
+
+    -- Bloquea la sala: valida existencia, obtiene precio y serializa reservas concurrentes
+    SELECT precio_hora INTO x_precio_hora
+    FROM sala WHERE id_sala = x_id_sala FOR UPDATE;
+
+    IF x_precio_hora IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'SALA_INEXISTENTE';
+    END IF;
+
+    SET x_total = x_precio_hora * TIMESTAMPDIFF(MINUTE, x_fecha_inicio, x_fecha_fin) / 60;
+
+    -- Traslape (ignora PENDIENTE ya expiradas)
+    IF EXISTS (
+        SELECT 1 FROM reserva
+        WHERE id_sala = x_id_sala
+          AND (estado = 'PAGADO'
+               OR (estado = 'PENDIENTE' AND fecha_expiracion > x_ahora))
+          AND x_fecha_inicio < fin
+          AND x_fecha_fin > inicio
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RESERVA_SOBREPUESTA';
+    END IF;
+
+    -- Fecha de expiración
+    IF x_fecha_inicio < x_ahora + INTERVAL 30 MINUTE THEN
+        SET x_fecha_expiracion = x_ahora + INTERVAL 15 MINUTE;
     ELSE
-        SET x_total_precio_hora = (SELECT precio_hora FROM sala WHERE id_sala = x_id_sala) * 
-        (TIMESTAMPDIFF(HOUR, x_fecha_inicio, x_fecha_fin));
+        SET x_fecha_expiracion = LEAST(x_fecha_inicio - INTERVAL 15 MINUTE,
+                                       x_fecha_expiracion_limite);
     END IF;
 
-    -- CALCULO DE LA FECHA DE EXPIRACION
-    IF x_fecha_inicio < x_fecha_expiracion_limite THEN
-        IF x_fecha_inicio < (NOW() + INTERVAL 30 MINUTE) THEN
-            SET x_fecha_expiracion = NOW() + INTERVAL 15 MINUTE;
-        ELSE        
-            SET x_fecha_expiracion = x_fecha_inicio - INTERVAL 1 HOUR;
-		END IF;
-    ELSE
-        SET x_fecha_expiracion = x_fecha_expiracion_limite;
-    END IF;
+    SET x_codigo = FLOOR(10000 + RAND() * 90000);
 
-    SET x_codigo = (RPAD(FLOOR(RAND() * 10000), 5, "0"));
+    INSERT INTO reserva(inicio, fin, estado, total, fecha_creacion, codigo,
+                        fecha_expiracion, id_cliente, id_sala)
+    VALUES(x_fecha_inicio, x_fecha_fin, 'PENDIENTE', x_total, x_ahora, x_codigo,
+           x_fecha_expiracion, x_id_cliente, x_id_sala);
 
-    INSERT INTO reserva(inicio, fin, estado, total, fecha_creacion, codigo, fecha_expiracion, id_cliente, id_sala) 
-    VALUES(x_fecha_inicio, x_fecha_fin, "PENDIENTE", x_total_precio_hora, NOW(), x_codigo, x_fecha_expiracion, 
-    x_id_cliente, x_id_sala);    
+    COMMIT;
 END $$
 DELIMITER ;
 
