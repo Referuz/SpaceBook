@@ -1013,3 +1013,16 @@ BEGIN
     VALUES (x_calificacion, x_comentario, x_id_reserva);
 END $$
 DELIMITER ;
+
+
+/*
+ __________   __    __    ____     ______   ______   __________   ____
+|___    ___| |   \ |  |  / ___|   |  ____| |   _  \ |___    ___| / ___| 
+    |  |     |    \|  |  \___  \  |   _|   |  |_)  |    |  |     \___  \ 
+  __|  |___  |  |\    |  ___)  |  |  |___  |   _  <     |  |      ___)  |
+ |_________| |__| \___| |_____/   |______| |__| \__\    |__|     |_____/ 
+*/
+
+select * from usuario;
+describe usuario;
+-- insert into usuario values("Juan Diego", "jade392@prueba.com", );
